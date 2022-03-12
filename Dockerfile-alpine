@@ -1,0 +1,46 @@
+# Builds a fully statically linked and portable version of pg-scram
+FROM alpine:3 AS build-env
+
+RUN apk add --no-cache alpine-sdk \
+  libedit-dev libedit-static \
+  linux-headers util-linux-dev \
+  ncurses-dev ncurses-static ncurses-terminfo \
+  openssl-dev openssl-libs-static \
+  zlib-dev zlib-static
+
+ENV CC="/usr/bin/x86_64-alpine-linux-musl-gcc" \
+  PG_SHA256="2cf78b2e468912f8101d695db5340cf313c2e9f68a612fb71427524e8c9a977a"
+
+WORKDIR /root
+
+RUN set -x \
+  && wget -O postgresql.tar.bz2 https://ftp.postgresql.org/pub/source/v14.2/postgresql-14.2.tar.bz2 \
+  && echo "$PG_SHA256 *postgresql.tar.bz2" | sha256sum -c - \
+  && tar xf postgresql.tar.bz2
+
+RUN cd postgresql-14.2 \
+  && LDFLAGS_EX='-static' ./configure \
+    --with-includes=/usr/include \
+    --with-libraries=/usr/lib \
+    --with-libraries=/lib \
+    --with-openssl \
+    --without-readline \
+    --without-ldap \
+  && make -j "$(nproc)" world \
+  && make -j "$(nproc)" install-world \
+  && make -C contrib install
+
+COPY main.c .
+
+RUN ${CC} -static \
+  -I/usr/include -I/usr/local/pgsql/include \
+  -L/usr/lib -L/usr/local/pgsql/lib \
+  main.c -o pg-scram \
+  -lpq -lpgport -lpgtypes -lpgcommon -lssl -lcrypto
+
+
+FROM alpine:3
+
+COPY --from=build-env /root/pg-scram /usr/local/bin
+
+ENTRYPOINT [ "pg-scram" ]
