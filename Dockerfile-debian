@@ -1,0 +1,13 @@
+# Builds a dynamically linked version of pg-scram for Debian 11
+FROM debian:11-slim AS build-env
+
+RUN apt-get update && apt-get install -y build-essential libpq-dev
+
+WORKDIR /root
+
+COPY main.c .
+
+RUN cc -I/usr/include/postgresql main.c -o pg-scram -lpq \
+  && cp pg-scram /usr/local/bin
+
+ENTRYPOINT [ "pg-scram" ]
